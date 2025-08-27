@@ -5,7 +5,9 @@ A simple, yet powerful web media downloader for macOS. Built with Swift and Swif
 ![macOS](https://img.shields.io/badge/macOS-11.0%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.0-orange)
 ![License](https://img.shields.io/badge/license-MIT-green)
-[Buy me a coffee](https://buymeacoffee.com/mstrslva)
+[https://giphy.com/stickers/buymeacoffee-creator-buy-me-a-coffee-support-7kZE0z52Sd9zSESzDA](https://buymeacoffee.com/mstrslva)
+
+
 
 ## What is Fetcha?
 
