@@ -1,6 +1,8 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository. PLEASE NOTE: "yt-dlp-MAX" was the original project name I used prior to adopting the release name Fetcha. yt-dlp-MAX does not use any part of the actual yt-dlp source code to work, as it is only a Swift front-end for yt-dlp and to some degree, ffmpeg. 
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository. 
+
+### PLEASE NOTE### "yt-dlp-MAX" was the original project name I used prior to adopting the release name Fetcha. yt-dlp-MAX does not use any part of the actual yt-dlp source code to work, as it is only a Swift front-end for yt-dlp and to some degree, ffmpeg. 
 
 ## Project Overview
 
