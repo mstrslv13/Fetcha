@@ -1,7 +1,7 @@
 # Fetcha
 
 A simple, yet powerful web media downloader for macOS. Built with Swift and SwiftUI, Fetcha provides a beautiful native interface for yt-dlp with browser cookie support and advanced features.
-<img width="1024" height="1024" alt="image" src="https://github.com/user-attachments/assets/c0f70713-83e4-4688-9a63-22f87681062d" />
+<img width="256" height="256" alt="image" src="https://github.com/user-attachments/assets/c0f70713-83e4-4688-9a63-22f87681062d" />
 [<img width="545" height="153" alt="yellow-button" src="https://github.com/user-attachments/assets/a801152e-2487-420e-bb08-96018d5b08cf" />](https://buymeacoffee.com/mstrslva))
 
 ![macOS](https://img.shields.io/badge/macOS-11.0%2B-blue)
