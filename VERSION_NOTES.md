@@ -1,8 +1,8 @@
-# Fetcha Final v1 - Release Candidate
+# Fetcha v0.9.0 - Major History & File Management Update
 
 ## Version Information
-- **Date**: September 2, 2025
-- **Version**: 0.2.0
+- **Date**: September 5, 2025
+- **Version**: 0.9.0
 - **Build**: macOS 15.5+ compatible
 - **Original Name**: yt-dlp-MAX
 
@@ -40,7 +40,51 @@
 - ✅ Filename templating and sanitization
 - ✅ Separate download locations for audio/video
 
-### Recent Fixes (Final v1)
+### New in v0.9.0
+- ✅ **Complete History Feature Overhaul**
+  - History items now have full feature parity with queue items
+  - Added "Open in Browser" and "Copy Source URL" buttons
+  - Shows actual filename instead of just directory
+  - Complete context menu with all queue features
+- ✅ **Fixed File Opening/Revealing Issues**
+  - Properly opens and reveals actual downloaded files
+  - No longer opens directories when trying to play files
+  - Smart file discovery finds files even if moved within directory
+- ✅ **Enhanced File Discovery System**
+  - Uses title keyword matching (first 3 words)
+  - Sorts by creation date for most recent files
+  - Falls back to most recent media file if no title match
+  - Handles special characters in titles properly
+- ✅ **Thumbnail Preservation**
+  - History now stores and displays video thumbnails
+  - Thumbnails persist across app restarts
+- ✅ **Improved Media Playback**
+  - MediaControlBar properly plays files from history
+  - Shows actual filename below title
+  - Robust error handling for missing files
+- ✅ **Backward Compatibility**
+  - Existing history records continue to work without migration
+  - Intelligent file search works with old history entries
+
+### Fixed in v0.3.1
+- ✅ File selection now works in History panel
+- ✅ Play button opens actual files instead of just showing in Finder
+- ✅ Media controls maintain independent state from queue selection
+- ✅ Completed counter shows actual count instead of hardcoded "30"
+- ✅ Dock Quick Actions properly open files with smart fallback
+- ✅ Added MediaSelectionCoordinator for better state management
+
+### New in v0.3.0
+- ✅ Quick Actions Dock menu showing last 30 downloads
+- ✅ Batch URL import from text/CSV files
+- ✅ RSS feed import with preview and selection
+- ✅ Quick-add to queue with paused downloads option
+- ✅ Media control toolbar (play/pause/stop/prev/next)
+- ✅ Enhanced error messages with recovery suggestions
+- ✅ Improved debug console with filtering and export
+- ✅ Fixed History panel filtering (Completed/Failed/In Progress)
+
+### Recent Fixes (v0.2.0)
 - ✅ "Show in Finder" reveals actual downloaded files
 - ✅ "Open File" properly launches with default media player
 - ✅ Failed downloads can reveal partial files in Finder

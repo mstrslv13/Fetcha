@@ -49,7 +49,14 @@
       "Bash(tree:*)",
       "Bash(cd:*)",
       "Bash(rsync:*)",
-      "Bash(git tag:*)"
+      "Bash(git tag:*)",
+      "WebFetch(domain:apple.stackexchange.com)",
+      "WebFetch(domain:blog.logrocket.com)",
+      "Bash(./package_for_distribution.sh)",
+      "Read(/Users/mstrslv/Library/**)",
+      "Bash(/opt/homebrew/bin/yt-dlp --simulate --print \"%(filepath)s\" \"https://www.youtube.com/watch?v=dQw4w9WgXcQ\")",
+      "Bash(/opt/homebrew/bin/yt-dlp --no-playlist --newline \"https://www.youtube.com/watch?v=dQw4w9WgXcQ\" -o \"/tmp/test2_%(title)s.%(ext)s\" --merge-output-format mp4)",
+      "Read(//Users/mstrslv/Downloads/Fetcha-Test/**)"
     ],
     "deny": [],
     "ask": [],

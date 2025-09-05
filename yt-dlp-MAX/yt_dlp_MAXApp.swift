@@ -6,10 +6,25 @@
 //
 
 import SwiftUI
+import AppKit
+
+// App Delegate for dock menu support
+class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        return DockMenuService.shared.getDockMenu()
+    }
+    
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Initialize dock menu service
+        _ = DockMenuService.shared
+    }
+}
 
 @main
 struct yt_dlp_MAXApp: App {
     @StateObject private var processManager = ProcessManager.shared
+    @StateObject private var preferences = AppPreferences.shared
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
     init() {
         // Ensure ProcessManager is initialized
@@ -22,7 +37,7 @@ struct yt_dlp_MAXApp: App {
     }
     
     var body: some Scene {
-        WindowGroup("Fetcha") {
+        WindowGroup(preferences.privateMode ? "Fetcha (Private)" : "Fetcha") {
             ContentView()
                 .onDisappear {
                     // Clean up when window closes

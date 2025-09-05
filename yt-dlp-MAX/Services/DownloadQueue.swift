@@ -30,6 +30,7 @@ class DownloadQueue: ObservableObject {
     @Published var downloadLocation: URL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
     @Published var useConsistentFormat = false
     @Published var consistentFormatType: FormatType = .bestVideo
+    @Published var isPaused = false  // Global pause state for queue
     @Published var maxConcurrentDownloads = 3 {
         didSet {
             UserDefaults.standard.set(maxConcurrentDownloads, forKey: "maxConcurrentDownloads")
@@ -111,7 +112,11 @@ class DownloadQueue: ObservableObject {
         itemCancellables[item.id] = cancellable
         
         items.append(item)
-        processQueue()
+        
+        // Only process queue if not paused
+        if !isPaused {
+            processQueue()
+        }
     }
     
     func removeFromQueue(_ item: QueueItem) {
@@ -246,6 +251,9 @@ class DownloadQueue: ObservableObject {
     // MARK: - Download Processing
     
     func processQueue() {
+        // Don't process if queue is paused
+        guard !isPaused else { return }
+        
         Task {
             // Start multiple downloads up to the limit
             while activeDownloads.count < maxConcurrentDownloads {
@@ -261,6 +269,21 @@ class DownloadQueue: ObservableObject {
                 // Brief delay to prevent race conditions
                 try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
             }
+        }
+    }
+    
+    // Toggle pause/resume for the queue
+    func togglePause() {
+        isPaused.toggle()
+        
+        if isPaused {
+            // Pause all active downloads
+            for item in items where item.status == .downloading {
+                pauseDownload(item)
+            }
+        } else {
+            // Resume processing
+            processQueue()
         }
     }
     
@@ -331,16 +354,34 @@ class DownloadQueue: ObservableObject {
                     self.items[idx].status = .completed
                     self.items[idx].progress = 100
                     
-                    // Add to download history
+                    // Add to download history with full metadata
                     let videoId = self.extractVideoId(from: item.url) ?? item.url
+                    // Use actualFilePath if available, otherwise fall back to downloadLocation
+                    let downloadDir = item.downloadLocation.path
+                    let actualFile = item.actualFilePath?.path
+                    
+                    // Get file size if file exists
+                    var fileSize: Int64?
+                    if let actualPath = actualFile {
+                        if let attributes = try? FileManager.default.attributesOfItem(atPath: actualPath) {
+                            fileSize = attributes[.size] as? Int64
+                        }
+                    }
+                    
                     DownloadHistory.shared.addToHistory(
                         videoId: videoId,
                         url: item.url,
                         title: item.title,
-                        downloadPath: item.downloadLocation.path,
-                        fileSize: nil,  // Could be extracted from download info
-                        duration: item.videoInfo.duration
+                        downloadPath: downloadDir,
+                        actualFilePath: actualFile,
+                        fileSize: fileSize,
+                        duration: item.videoInfo.duration,
+                        thumbnail: item.videoInfo.thumbnail,
+                        uploader: item.videoInfo.uploader
                     )
+                    
+                    // Update dock menu
+                    DockMenuService.shared.notifyDownloadCompleted()
                 }
                 self.activeDownloads.remove(item.id)
                 self.processQueue()

@@ -40,6 +40,12 @@ struct EnhancedQueueView: View {
                     QueueItemRow(item: item, queue: queue, isSelected: selectedItem?.id == item.id)
                         .onTapGesture {
                             selectedItem = item
+                            // Notify that a queue item was selected
+                            NotificationCenter.default.post(
+                                name: NSNotification.Name("QueueItemSelected"),
+                                object: nil,
+                                userInfo: ["item": item]
+                            )
                         }
                         .onDrag {
                             self.draggedItem = item

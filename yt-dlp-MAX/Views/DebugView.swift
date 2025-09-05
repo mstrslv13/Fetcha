@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 class DebugLogger: ObservableObject {
     static let shared = DebugLogger()
@@ -113,6 +115,12 @@ struct DebugView: View {
                 Toggle("Auto-scroll", isOn: $autoScroll)
                     .toggleStyle(.checkbox)
                 
+                Button(action: exportLogs) {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .buttonStyle(.bordered)
+                .help("Export logs to file")
+                
                 Button("Clear") {
                     logger.clear()
                 }
@@ -170,6 +178,38 @@ struct DebugView: View {
             }
         }
         .frame(width: 800, height: 600)
+    }
+    
+    private func exportLogs() {
+        let savePanel = NSSavePanel()
+        savePanel.title = "Export Debug Logs"
+        savePanel.message = "Choose where to save the debug logs"
+        savePanel.prompt = "Export"
+        savePanel.nameFieldStringValue = "fetcha_debug_\(Date().timeIntervalSince1970).txt"
+        savePanel.allowedContentTypes = [.plainText]
+        
+        savePanel.begin { response in
+            if response == .OK, let url = savePanel.url {
+                var logContent = "Fetcha Debug Logs - Exported \(Date())\n"
+                logContent += "========================================\n\n"
+                
+                for log in filteredLogs {
+                    let timestamp = DateFormatter.localizedString(from: log.timestamp, dateStyle: .short, timeStyle: .medium)
+                    logContent += "[\(timestamp)] [\(log.level)] \(log.message)\n"
+                    if let details = log.details {
+                        logContent += "  Details: \(details)\n"
+                    }
+                    logContent += "\n"
+                }
+                
+                do {
+                    try logContent.write(to: url, atomically: true, encoding: .utf8)
+                    DebugLogger.shared.log("Logs exported successfully", level: .success, details: url.path)
+                } catch {
+                    DebugLogger.shared.log("Failed to export logs", level: .error, details: error.localizedDescription)
+                }
+            }
+        }
     }
 }
 

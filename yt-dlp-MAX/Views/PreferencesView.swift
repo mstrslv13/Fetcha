@@ -20,6 +20,9 @@ struct PreferencesView: View {
                 Label("Update", systemImage: "arrow.triangle.2.circlepath")
                     .tag("update")
                 
+                Label("Privacy", systemImage: "lock.shield")
+                    .tag("privacy")
+                
                 Label("About", systemImage: "info.circle")
                     .tag("about")
             }
@@ -37,6 +40,8 @@ struct PreferencesView: View {
                     PostProcessingPreferencesView()
                 case "update":
                     UpdatePreferencesView()
+                case "privacy":
+                    PrivacyPreferencesView()
                 case "about":
                     AboutView()
                 default:
@@ -773,6 +778,165 @@ struct UpdatePreferencesView: View {
     }
 }
 
+struct PrivacyPreferencesView: View {
+    @StateObject private var preferences = AppPreferences.shared
+    @StateObject private var downloadHistory = DownloadHistory.shared
+    @State private var showingClearHistoryConfirmation = false
+    @State private var showingPrivateFolderPicker = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Privacy & History")
+                .font(.title)
+                .fontWeight(.bold)
+                .padding(.bottom, 10)
+            
+            // Private Mode Section
+            GroupBox {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Private Instance Mode")
+                        .font(.headline)
+                    
+                    Toggle("Enable Private Mode", isOn: $preferences.privateMode)
+                        .onChange(of: preferences.privateMode) { _, newValue in
+                            if newValue {
+                                // Reload history for private mode
+                                downloadHistory.loadHistory()
+                            }
+                        }
+                    
+                    Text("In private mode, download history is not saved and a separate download location can be used.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    if preferences.privateMode {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Private Download Location")
+                                .font(.subheadline)
+                            
+                            HStack {
+                                TextField("Private download path (optional)", text: $preferences.privateDownloadPath)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                Button("Choose...") {
+                                    showingPrivateFolderPicker = true
+                                }
+                                .frame(width: 80)
+                            }
+                            
+                            Toggle("Show private mode indicator", isOn: $preferences.privateModeShowIndicator)
+                                .help("Shows a visual indicator when private mode is active")
+                        }
+                        .padding(.leading, 20)
+                    }
+                }
+            }
+            
+            // History Management Section
+            GroupBox {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Download History")
+                        .font(.headline)
+                    
+                    HStack {
+                        Text("Current history items:")
+                        Text("\(downloadHistory.history.count)")
+                            .fontWeight(.semibold)
+                    }
+                    
+                    // Auto-clear settings
+                    HStack {
+                        Text("Auto-clear history:")
+                        Picker("", selection: $preferences.historyAutoClear) {
+                            ForEach(Array(preferences.historyAutoClearOptions.keys.sorted { key1, key2 in
+                                let order = ["never", "1", "7", "30", "90"]
+                                let index1 = order.firstIndex(of: key1) ?? 999
+                                let index2 = order.firstIndex(of: key2) ?? 999
+                                return index1 < index2
+                            })), id: \.self) { key in
+                                Text(preferences.historyAutoClearOptions[key] ?? key)
+                                    .tag(key)
+                            }
+                        }
+                        .pickerStyle(MenuPickerStyle())
+                        .frame(width: 150)
+                        .onChange(of: preferences.historyAutoClear) { _, newValue in
+                            // Apply auto-clear immediately when changed
+                            downloadHistory.performAutoClear()
+                        }
+                    }
+                    
+                    Text("Automatically remove history items older than the specified time.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Divider()
+                    
+                    // Manual clear actions
+                    VStack(alignment: .leading, spacing: 12) {
+                        Button("Clear All History") {
+                            showingClearHistoryConfirmation = true
+                        }
+                        .foregroundColor(.red)
+                        
+                        Button("Clean Up Deleted Files") {
+                            downloadHistory.cleanupDeletedFiles()
+                        }
+                        .help("Remove history entries for files that no longer exist")
+                        
+                        if preferences.historyAutoClear != "never" {
+                            Button("Apply Auto-Clear Now") {
+                                downloadHistory.performAutoClear()
+                            }
+                            .help("Immediately apply the auto-clear setting")
+                        }
+                    }
+                }
+            }
+            
+            // Embed Options
+            GroupBox {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Media Metadata")
+                        .font(.headline)
+                    
+                    Toggle("Embed thumbnails in video files", isOn: $preferences.embedThumbnail)
+                        .help("Embeds thumbnail images into downloaded video files")
+                    
+                    Text("Thumbnails are always saved separately for display in the app.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            Spacer()
+        }
+        .padding(30)
+        .alert("Clear All History?", isPresented: $showingClearHistoryConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Clear", role: .destructive) {
+                downloadHistory.clearHistory(skipConfirmation: true)
+            }
+        } message: {
+            Text("This will permanently remove all download history. This action cannot be undone.")
+        }
+        .fileImporter(
+            isPresented: $showingPrivateFolderPicker,
+            allowedContentTypes: [.folder]
+        ) { result in
+            switch result {
+            case .success(let url):
+                let gotAccess = url.startAccessingSecurityScopedResource()
+                preferences.privateDownloadPath = url.path
+                if gotAccess {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            case .failure(let error):
+                print("Error selecting private folder: \(error)")
+            }
+        }
+    }
+}
+
 struct AboutView: View {
     var body: some View {
         VStack(spacing: 12) {
@@ -788,7 +952,7 @@ struct AboutView: View {
                 .font(.system(size: 38))
                 .fontWeight(.bold)
             
-            Text("Version 0.2.0")
+            Text("Version 0.9.0")
                 .font(.system(size: 16))
                 .foregroundColor(.secondary)
             

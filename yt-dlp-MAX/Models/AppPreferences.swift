@@ -65,8 +65,19 @@ class AppPreferences: ObservableObject {
     @AppStorage("audioExtractionQuality") var audioExtractionQuality: String = "high"
     @AppStorage("keepVideoAfterExtraction") var keepVideoAfterExtraction: Bool = true
     
+    // History Management Settings
+    @AppStorage("historyAutoClear") var historyAutoClear: String = "never"  // never, 1, 7, 30, 90 days
+    @AppStorage("privateMode") var privateMode: Bool = false
+    @AppStorage("privateDownloadPath") var privateDownloadPath: String = ""
+    @AppStorage("privateModeShowIndicator") var privateModeShowIndicator: Bool = true
+    
     // Computed property for actual download path
     var resolvedDownloadPath: String {
+        // Use private path if in private mode
+        if privateMode && !privateDownloadPath.isEmpty {
+            return NSString(string: privateDownloadPath).expandingTildeInPath
+        }
+        
         if downloadPath.isEmpty {
             return FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first?.path ?? "~/Downloads"
         }
@@ -172,6 +183,15 @@ class AppPreferences: ObservableObject {
         "%(playlist)s/%(playlist_index)s - %(title)s.%(ext)s": "Playlist/Index - Title"
     ]
     
+    // History auto-clear options
+    let historyAutoClearOptions = [
+        "never": "Never",
+        "1": "After 1 day",
+        "7": "After 7 days",
+        "30": "After 30 days",
+        "90": "After 90 days"
+    ]
+    
     // Container format options
     let containerFormatOptions = [
         "mp4": "MP4 (Most Compatible)",
@@ -261,5 +281,11 @@ class AppPreferences: ObservableObject {
         audioExtractionBitrate = "320k"
         audioExtractionQuality = "high"
         keepVideoAfterExtraction = true
+        
+        // History settings
+        historyAutoClear = "never"
+        privateMode = false
+        privateDownloadPath = ""
+        privateModeShowIndicator = true
     }
 }

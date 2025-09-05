@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct FileHistoryPanel: View {
+    @Binding var selectedItem: DownloadHistory.DownloadRecord?
     @State private var selectedTab = "history"
     @State private var searchText = ""
     @State private var filterType = "All"
@@ -61,7 +62,7 @@ struct FileHistoryPanel: View {
             
             // Content based on selected tab
             if selectedTab == "history" {
-                FileHistoryList(searchText: searchText, filterType: filterType)
+                FileHistoryList(searchText: searchText, filterType: filterType, selectedItem: $selectedItem)
             } else {
                 DebugLogsView()
             }
@@ -72,10 +73,30 @@ struct FileHistoryPanel: View {
 struct FileHistoryList: View {
     let searchText: String
     let filterType: String
+    @Binding var selectedItem: DownloadHistory.DownloadRecord?
     @StateObject private var downloadHistory = DownloadHistory.shared
     
     var filteredHistory: [DownloadHistory.DownloadRecord] {
         var items = Array(downloadHistory.history)
+        
+        // Apply filter type
+        // Note: Since DownloadHistory only stores completed downloads,
+        // we can only filter between "All" and "Completed"
+        // "Failed" and "In Progress" will show empty for now
+        switch filterType {
+        case "Completed":
+            // All items in history are completed downloads
+            break
+        case "Failed":
+            // History doesn't store failed downloads currently
+            items = []
+        case "In Progress":
+            // History doesn't store in-progress downloads
+            items = []
+        default: // "All"
+            // Show all completed downloads
+            break
+        }
         
         // Apply search filter
         if !searchText.isEmpty {
@@ -93,7 +114,19 @@ struct FileHistoryList: View {
         ScrollView {
             VStack(spacing: 0) {
                 ForEach(filteredHistory, id: \.videoId) { item in
-                    FileHistoryRow(item: item)
+                    FileHistoryRow(
+                        item: item,
+                        isSelected: selectedItem?.videoId == item.videoId,
+                        onSelect: {
+                            selectedItem = item
+                            // Notify MediaControlBar of selection
+                            NotificationCenter.default.post(
+                                name: NSNotification.Name("HistoryItemSelected"),
+                                object: nil,
+                                userInfo: ["item": item]
+                            )
+                        }
+                    )
                     Divider()
                         .padding(.leading, 12)
                 }
@@ -104,6 +137,8 @@ struct FileHistoryList: View {
 
 struct FileHistoryRow: View {
     let item: DownloadHistory.DownloadRecord
+    let isSelected: Bool
+    let onSelect: () -> Void
     
     var statusIcon: String {
         return "checkmark.circle.fill"
@@ -124,9 +159,19 @@ struct FileHistoryRow: View {
                     .font(.system(size: 11))
                     .lineLimit(1)
                 
-                Text(formatDate(item.timestamp))
-                    .font(.system(size: 9))
-                    .foregroundColor(.secondary)
+                HStack(spacing: 4) {
+                    Text(formatDate(item.timestamp))
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                    
+                    if !item.filename.isEmpty && item.filename != item.title {
+                        Text("• \(item.filename)")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
             }
             
             Spacer()
@@ -139,9 +184,79 @@ struct FileHistoryRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+        .background(isSelected ? Color.accentColor.opacity(0.1) : Color.clear)
         .contentShape(Rectangle())
         .onTapGesture {
-            // Select item for details view
+            onSelect()
+        }
+        .contextMenu {
+            Button(action: {
+                // Open the file using DownloadHistory's method
+                if let actualFileURL = DownloadHistory.shared.findActualFile(for: item) {
+                    NSWorkspace.shared.open(actualFileURL)
+                } else {
+                    // File doesn't exist, show error or parent folder
+                    let url = URL(fileURLWithPath: item.resolvedFilePath)
+                    if FileManager.default.fileExists(atPath: url.deletingLastPathComponent().path) {
+                        NSWorkspace.shared.open(url.deletingLastPathComponent())
+                    }
+                }
+            }) {
+                Label("Open File", systemImage: "play.circle")
+            }
+            
+            Button(action: {
+                // Show in Finder using DownloadHistory's method
+                if let actualFileURL = DownloadHistory.shared.findActualFile(for: item) {
+                    NSWorkspace.shared.activateFileViewerSelecting([actualFileURL])
+                } else {
+                    let url = URL(fileURLWithPath: item.resolvedFilePath)
+                    if FileManager.default.fileExists(atPath: url.path) {
+                        NSWorkspace.shared.open(url)
+                    } else {
+                        NSWorkspace.shared.open(url.deletingLastPathComponent())
+                    }
+                }
+            }) {
+                Label("Show in Finder", systemImage: "folder")
+            }
+            
+            Button(action: {
+                // Open source URL in browser
+                if let url = URL(string: item.url) {
+                    NSWorkspace.shared.open(url)
+                }
+            }) {
+                Label("Open in Browser", systemImage: "safari")
+            }
+            
+            Divider()
+            
+            Button(action: {
+                // Copy file path - use actual file path if available
+                let pathToCopy = item.actualFilePath ?? item.downloadPath
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(pathToCopy, forType: .string)
+            }) {
+                Label("Copy File Path", systemImage: "doc.on.doc")
+            }
+            
+            Button(action: {
+                // Copy source URL
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(item.url, forType: .string)
+            }) {
+                Label("Copy Source URL", systemImage: "link")
+            }
+            
+            Divider()
+            
+            if let uploader = item.uploader {
+                Button(action: {}) {
+                    Label(uploader, systemImage: "person.circle")
+                }
+                .disabled(true)
+            }
         }
     }
     

@@ -13,12 +13,19 @@ struct ContentView: View {
     @State private var showingPreferences = false
     @State private var lastClipboard = ""
     @State private var selectedQueueItem: QueueDownloadTask?
+    @State private var selectedHistoryItem: DownloadHistory.DownloadRecord?
     @State private var showingPlaylistConfirmation = false
     @State private var detectedPlaylistInfo: PlaylistConfirmationView.PlaylistInfo?
     @State private var showHistoryPanel = false
     @State private var showDetailsPanel = true
     @State private var historyPanelWidth: CGFloat = 300
     @State private var preferencesWindow: NSWindow?
+    @State private var showingBatchImportResult = false
+    @State private var batchImportResult: BatchImportService.ImportResult?
+    @State private var showingRSSImport = false
+    @State private var rssURL = ""
+    @State private var rssFeed: RSSFeedParser.RSSFeed?
+    @State private var showingRSSPreview = false
     @StateObject private var downloadQueue = DownloadQueue()
     @StateObject private var preferences = AppPreferences.shared
     @StateObject private var downloadHistory = DownloadHistory.shared
@@ -31,7 +38,13 @@ struct ContentView: View {
         HStack(spacing: 0) {
             // History/Debug panel on the left with smoother animation
             if showHistoryPanel {
-                FileHistoryPanel()
+                FileHistoryPanel(selectedItem: $selectedHistoryItem)
+                    .onChange(of: selectedHistoryItem) { oldValue, newValue in
+                        // Clear queue selection when history item is selected
+                        if newValue != nil {
+                            selectedQueueItem = nil
+                        }
+                    }
                     .frame(width: historyPanelWidth)
                     .transition(.asymmetric(
                         insertion: .push(from: .leading),
@@ -89,6 +102,28 @@ struct ContentView: View {
             
             // Main column with URL input and queue
             VStack(spacing: 0) {
+                // Private mode indicator
+                if preferences.privateMode && preferences.privateModeShowIndicator {
+                    HStack {
+                        Image(systemName: "lock.shield.fill")
+                            .foregroundColor(.orange)
+                        Text("Private Mode Active")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                        Text("• History not saved")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.orange.opacity(0.1))
+                    .overlay(
+                        Rectangle()
+                            .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                    )
+                }
+                
                 // URL input field
                 VStack(spacing: 8) {
                     HStack(spacing: 8) {
@@ -122,6 +157,49 @@ struct ContentView: View {
                             .disabled(urlString.isEmpty || isLoading)
                         }
                         
+                        // Queue pause/resume button
+                        if !downloadQueue.items.isEmpty {
+                            Button(action: {
+                                downloadQueue.togglePause()
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: downloadQueue.isPaused ? "play.fill" : "pause.fill")
+                                    Text(downloadQueue.isPaused ? "Resume" : "Pause")
+                                        .font(.caption)
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .foregroundColor(downloadQueue.isPaused ? .orange : .primary)
+                            .help(downloadQueue.isPaused ? "Resume queue processing" : "Pause queue processing")
+                            .accessibilityLabel(downloadQueue.isPaused ? "Resume Queue" : "Pause Queue")
+                        }
+                        
+                        // Import menu button
+                        Menu {
+                            Button(action: {
+                                Task {
+                                    await importURLsFromFile()
+                                }
+                            }) {
+                                Label("Import from Text/CSV File...", systemImage: "doc.text")
+                            }
+                            .help("Import URLs from a text or CSV file")
+                            
+                            Button(action: {
+                                showingRSSImport = true
+                            }) {
+                                Label("Import from RSS Feed...", systemImage: "dot.radiowaves.left.and.right")
+                            }
+                            .help("Import videos from an RSS feed")
+                        } label: {
+                            Image(systemName: "square.and.arrow.down")
+                        }
+                        .menuStyle(.borderlessButton)
+                        .frame(width: 24)
+                        .help("Import URLs")
+                        .accessibilityLabel("Import Menu")
+                        .accessibilityHint("Import URLs from various sources")
+                        
                         Button(action: {
                             showingPreferences = true
                         }) {
@@ -146,9 +224,14 @@ struct ContentView: View {
                             ProgressView()
                                 .scaleEffect(0.7)
                         }
-                        Text(statusMessage)
+                        if downloadQueue.isPaused {
+                            Image(systemName: "pause.circle.fill")
+                                .foregroundColor(.orange)
+                                .font(.caption)
+                        }
+                        Text(downloadQueue.isPaused ? "Queue is paused" : statusMessage)
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(downloadQueue.isPaused ? .orange : .secondary)
                         Spacer()
                     }
                 }
@@ -162,6 +245,21 @@ struct ContentView: View {
                     queue: downloadQueue,
                     selectedItem: $selectedQueueItem
                 )
+                .onChange(of: selectedQueueItem) { oldValue, newValue in
+                    // Clear history selection when queue item is selected
+                    if newValue != nil {
+                        selectedHistoryItem = nil
+                    }
+                }
+                
+                Divider()
+                
+                // Media control toolbar
+                MediaControlBar(
+                    queue: downloadQueue,
+                    downloadHistory: downloadHistory
+                )
+                .frame(height: 44)
             }
             .frame(minWidth: 400)
             
@@ -194,7 +292,7 @@ struct ContentView: View {
             if showDetailsPanel {
                 Divider()
                 
-                VideoDetailsPanel(item: selectedQueueItem)
+                VideoDetailsPanel(item: selectedQueueItem, historyItem: selectedHistoryItem)
                     .frame(width: 350)
                     .transition(.asymmetric(
                         insertion: .push(from: .trailing),
@@ -248,6 +346,51 @@ struct ContentView: View {
                         isLoading = false
                         statusMessage = "Playlist cancelled"
                         urlString = ""
+                    }
+                )
+            }
+        }
+        .sheet(isPresented: $showingBatchImportResult) {
+            if let result = batchImportResult {
+                BatchImportResultView(
+                    result: result,
+                    onConfirm: {
+                        showingBatchImportResult = false
+                        processBatchImport(result.validURLs)
+                    },
+                    onCancel: {
+                        showingBatchImportResult = false
+                        statusMessage = "Import cancelled"
+                    }
+                )
+            }
+        }
+        .sheet(isPresented: $showingRSSImport) {
+            RSSImportDialog(
+                rssURL: $rssURL,
+                onImport: { url in
+                    showingRSSImport = false
+                    Task {
+                        await importRSSFeed(url)
+                    }
+                },
+                onCancel: {
+                    showingRSSImport = false
+                    rssURL = ""
+                }
+            )
+        }
+        .sheet(isPresented: $showingRSSPreview) {
+            if let feed = rssFeed {
+                RSSImportPreviewView(
+                    feed: feed,
+                    onImport: { urls in
+                        showingRSSPreview = false
+                        processRSSImport(urls)
+                    },
+                    onCancel: {
+                        showingRSSPreview = false
+                        rssFeed = nil
                     }
                 )
             }
@@ -638,6 +781,250 @@ struct ContentView: View {
         ) { _ in
             self.preferencesWindow = nil
         }
+    }
+    
+    // MARK: - Batch Import Functions
+    
+    private func importURLsFromFile() async {
+        if let fileURL = await BatchImportService.shared.showImportDialog() {
+            do {
+                let result = try BatchImportService.shared.importURLs(from: fileURL)
+                await MainActor.run {
+                    self.batchImportResult = result
+                    self.showingBatchImportResult = true
+                    
+                    if result.validURLs.isEmpty {
+                        statusMessage = "No valid URLs found in file"
+                    } else {
+                        statusMessage = "Found \(result.validURLs.count) URLs to import"
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    statusMessage = "Failed to import file: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    private func processBatchImport(_ urls: [String]) {
+        isLoading = true
+        statusMessage = "Adding \(urls.count) URLs to queue..."
+        
+        var addedCount = 0
+        var skippedCount = 0
+        
+        for url in urls {
+            // Skip if already in queue
+            if downloadQueue.items.contains(where: { $0.url == url }) {
+                skippedCount += 1
+                continue
+            }
+            
+            // Skip if already downloaded (based on preferences)
+            if preferences.skipDuplicates && downloadHistory.hasDownloaded(url: url) {
+                skippedCount += 1
+                continue
+            }
+            
+            addedCount += 1
+            
+            // Quick add with placeholder info
+            let placeholderInfo = VideoInfo(
+                title: "Loading... (\(URL(string: url)?.host ?? "Unknown"))",
+                uploader: nil,
+                duration: nil,
+                webpage_url: url,
+                thumbnail: nil,
+                formats: nil,
+                description: nil,
+                upload_date: nil,
+                timestamp: nil,
+                view_count: nil,
+                like_count: nil,
+                channel_id: nil,
+                uploader_id: nil,
+                uploader_url: nil
+            )
+            
+            downloadQueue.addToQueue(url: url, format: nil, videoInfo: placeholderInfo)
+            
+            // Fetch metadata in background
+            Task {
+                if let metadata = try? await ytdlpService.fetchMetadata(for: url) {
+                    await MainActor.run {
+                        // Update queue item with real metadata
+                        if let index = downloadQueue.items.firstIndex(where: { $0.url == url }) {
+                            downloadQueue.items[index].videoInfo = metadata
+                        }
+                    }
+                }
+            }
+        }
+        
+        isLoading = false
+        
+        if skippedCount > 0 {
+            statusMessage = "Added \(addedCount) URLs, skipped \(skippedCount) duplicates"
+        } else {
+            statusMessage = "Added \(addedCount) URLs to queue"
+        }
+    }
+    
+    // MARK: - RSS Import Functions
+    
+    private func importRSSFeed(_ urlString: String) async {
+        isLoading = true
+        statusMessage = "Loading RSS feed..."
+        
+        do {
+            let feed = try await RSSFeedParser.parseFeed(from: urlString)
+            await MainActor.run {
+                self.rssFeed = feed
+                self.showingRSSPreview = true
+                self.isLoading = false
+                self.statusMessage = "Found \(feed.videoItems.count) videos in RSS feed"
+            }
+        } catch {
+            await MainActor.run {
+                self.isLoading = false
+                self.statusMessage = "Failed to load RSS feed: \(error.localizedDescription)"
+            }
+        }
+    }
+    
+    private func processRSSImport(_ urls: [String]) {
+        guard !urls.isEmpty else { return }
+        
+        isLoading = true
+        statusMessage = "Adding \(urls.count) videos from RSS feed..."
+        
+        var addedCount = 0
+        var skippedCount = 0
+        
+        for url in urls {
+            // Skip if already in queue
+            if downloadQueue.items.contains(where: { $0.url == url }) {
+                skippedCount += 1
+                continue
+            }
+            
+            // Skip if already downloaded (based on preferences)
+            if preferences.skipDuplicates && downloadHistory.hasDownloaded(url: url) {
+                skippedCount += 1
+                continue
+            }
+            
+            addedCount += 1
+            
+            // Quick add with placeholder info
+            let placeholderInfo = VideoInfo(
+                title: "Loading... (RSS Import)",
+                uploader: nil,
+                duration: nil,
+                webpage_url: url,
+                thumbnail: nil,
+                formats: nil,
+                description: nil,
+                upload_date: nil,
+                timestamp: nil,
+                view_count: nil,
+                like_count: nil,
+                channel_id: nil,
+                uploader_id: nil,
+                uploader_url: nil
+            )
+            
+            downloadQueue.addToQueue(url: url, format: nil, videoInfo: placeholderInfo)
+            
+            // Fetch metadata in background
+            Task {
+                if let metadata = try? await ytdlpService.fetchMetadata(for: url) {
+                    await MainActor.run {
+                        // Update queue item with real metadata
+                        if let index = downloadQueue.items.firstIndex(where: { $0.url == url }) {
+                            downloadQueue.items[index].videoInfo = metadata
+                        }
+                    }
+                }
+            }
+        }
+        
+        isLoading = false
+        rssFeed = nil
+        
+        if skippedCount > 0 {
+            statusMessage = "Added \(addedCount) videos from RSS, skipped \(skippedCount) duplicates"
+        } else {
+            statusMessage = "Added \(addedCount) videos from RSS feed"
+        }
+    }
+}
+
+// RSS Import Dialog
+struct RSSImportDialog: View {
+    @Binding var rssURL: String
+    let onImport: (String) -> Void
+    let onCancel: () -> Void
+    
+    @State private var isValidURL = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Image(systemName: "dot.radiowaves.left.and.right")
+                    .font(.title2)
+                    .foregroundColor(.orange)
+                
+                Text("Import from RSS Feed")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+            }
+            
+            Text("Enter the URL of an RSS feed containing video links")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            
+            Divider()
+            
+            VStack(alignment: .leading, spacing: 8) {
+                Text("RSS Feed URL:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                TextField("https://example.com/feed.rss", text: $rssURL)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .onChange(of: rssURL) { oldValue, newValue in
+                        isValidURL = newValue.hasPrefix("http://") || newValue.hasPrefix("https://")
+                    }
+            }
+            
+            Text("Supported: YouTube channels, podcast feeds, video blogs with Media RSS")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            
+            Divider()
+            
+            HStack {
+                Spacer()
+                
+                Button("Cancel") {
+                    onCancel()
+                }
+                .keyboardShortcut(.escape)
+                
+                Button("Load Feed") {
+                    onImport(rssURL)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!isValidURL)
+                .keyboardShortcut(.return)
+            }
+        }
+        .padding()
+        .frame(width: 450)
     }
 }
 

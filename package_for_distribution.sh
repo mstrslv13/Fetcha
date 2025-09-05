@@ -17,7 +17,7 @@ fi
 # Create distribution directory
 DIST_DIR="dist"
 APP_NAME="fetcha.stream"
-VERSION="0.2.0"
+VERSION="0.9.0"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 OUTPUT_NAME="${APP_NAME}_v${VERSION}_${TIMESTAMP}"
 

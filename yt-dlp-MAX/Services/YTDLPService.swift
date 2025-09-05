@@ -861,10 +861,19 @@ class YTDLPService {
             arguments.append("-k")
         }
         
-        // Embed thumbnail if requested
+        // Handle thumbnails
         if preferences.embedThumbnail {
+            // Embed thumbnail in the video file
             arguments.append("--embed-thumbnail")
+            // Also write thumbnail separately for history
+            arguments.append("--write-thumbnail")
+        } else {
+            // Still write thumbnail separately for display in history/queue
+            arguments.append("--write-thumbnail")
         }
+        
+        // Add metadata
+        arguments.append("--add-metadata")
         
         // Embed subtitles if requested
         if preferences.embedSubtitles {
@@ -1081,6 +1090,60 @@ class YTDLPService {
         if process.terminationStatus == 0 {
             DebugLogger.shared.log("Download completed successfully", level: .success)
             
+            // If actualFilePath wasn't captured from output, try to find the downloaded file
+            if downloadTask.actualFilePath == nil {
+                let outputDir = URL(fileURLWithPath: outputPath)
+                let videoTitle = downloadTask.title
+                
+                DebugLogger.shared.log("Searching for downloaded file", level: .info, details: "Title: \(videoTitle), Dir: \(outputPath)")
+                
+                // Try to find the downloaded file in the output directory
+                if let contents = try? FileManager.default.contentsOfDirectory(at: outputDir, includingPropertiesForKeys: [.creationDateKey], options: .skipsHiddenFiles) {
+                    // Sort by creation date to get the most recent file
+                    let sortedFiles = contents.filter { !$0.hasDirectoryPath }.sorted { url1, url2 in
+                        let date1 = (try? url1.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date.distantPast
+                        let date2 = (try? url2.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date.distantPast
+                        return date1 > date2
+                    }
+                    
+                    // First try to find a file that contains parts of the video title
+                    var downloadedFile: URL? = nil
+                    
+                    // Clean the title for matching
+                    let cleanTitle = videoTitle
+                        .replacingOccurrences(of: "[", with: "")
+                        .replacingOccurrences(of: "]", with: "")
+                        .replacingOccurrences(of: "(", with: "")
+                        .replacingOccurrences(of: ")", with: "")
+                        .replacingOccurrences(of: "#", with: "")
+                    
+                    // Try to find by title parts
+                    let titleWords = cleanTitle.split(separator: " ").prefix(3).map(String.init)
+                    downloadedFile = sortedFiles.first { url in
+                        let filename = url.lastPathComponent.lowercased()
+                        return !filename.contains(".part") && 
+                               titleWords.contains { word in filename.contains(word.lowercased()) }
+                    }
+                    
+                    // If not found, get the most recent video file
+                    if downloadedFile == nil {
+                        downloadedFile = sortedFiles.first { url in
+                            let ext = url.pathExtension.lowercased()
+                            return ["mp4", "webm", "mkv", "avi", "mov", "flv", "mp3", "m4a", "opus", "wav", "aac"].contains(ext)
+                        }
+                    }
+                    
+                    if let foundFile = downloadedFile {
+                        await MainActor.run {
+                            downloadTask.actualFilePath = foundFile
+                        }
+                        DebugLogger.shared.log("Found downloaded file", level: .info, details: foundFile.path)
+                    } else {
+                        DebugLogger.shared.log("Could not find downloaded file", level: .warning, details: "Searched in: \(outputPath)")
+                    }
+                }
+            }
+            
             // Apply post-processing if enabled
             if AppPreferences.shared.enablePostProcessing, 
                let filePath = downloadTask.actualFilePath {
@@ -1090,11 +1153,27 @@ class YTDLPService {
             // Extract audio if enabled (after post-processing if that was enabled)
             if AppPreferences.shared.enableAudioExtraction {
                 // Use the post-processed file if available, otherwise the original
-                let fileToExtractFrom = downloadTask.actualFilePath ?? URL(fileURLWithPath: outputPath)
-                extractAudio(from: fileToExtractFrom, for: downloadTask)
+                if let actualFile = downloadTask.actualFilePath {
+                    extractAudio(from: actualFile, for: downloadTask)
+                } else {
+                    DebugLogger.shared.log("Cannot extract audio - file path not found", level: .warning)
+                }
                 
                 // Wait a moment for extraction to complete
                 try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
+            }
+            
+            // Try to find and save thumbnail for history
+            if let actualFile = downloadTask.actualFilePath {
+                let thumbnailPath = findThumbnailFile(for: actualFile)
+                if let thumbnail = thumbnailPath {
+                    // Save thumbnail path or convert to base64 for storage
+                    await MainActor.run {
+                        // Store local thumbnail path instead of URL for reliability
+                        downloadTask.videoInfo.thumbnail = thumbnail.path
+                    }
+                    DebugLogger.shared.log("Found thumbnail file", level: .info, details: thumbnail.lastPathComponent)
+                }
             }
             
             await MainActor.run {
@@ -1371,6 +1450,32 @@ class YTDLPService {
                 downloadTask.downloadStatus = "Post-processing unavailable"
             }
         }
+    }
+    
+    // Find thumbnail file for a downloaded video
+    private func findThumbnailFile(for videoFile: URL) -> URL? {
+        let directory = videoFile.deletingLastPathComponent()
+        let baseName = videoFile.deletingPathExtension().lastPathComponent
+        
+        // Common thumbnail extensions
+        let thumbnailExtensions = ["jpg", "jpeg", "png", "webp"]
+        
+        for ext in thumbnailExtensions {
+            let thumbnailPath = directory.appendingPathComponent("\(baseName).\(ext)")
+            if FileManager.default.fileExists(atPath: thumbnailPath.path) {
+                return thumbnailPath
+            }
+        }
+        
+        // Also check for .thumbnail suffix (some yt-dlp versions)
+        for ext in thumbnailExtensions {
+            let thumbnailPath = directory.appendingPathComponent("\(baseName).thumbnail.\(ext)")
+            if FileManager.default.fileExists(atPath: thumbnailPath.path) {
+                return thumbnailPath
+            }
+        }
+        
+        return nil
     }
     
     // Audio extraction using ffmpeg
